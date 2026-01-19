@@ -113,7 +113,16 @@ CrisisNet/
 │   ├── models.py            # Pydantic models and state management
 │   ├── requirements.txt     # Python dependencies
 │   └── utils/
-│       └── graph_utils.py   # Graph construction and SNA utilities
+│       ├── graph_utils.py        # Graph construction + SNA utilities
+│       ├── text_insights.py      # Topic/sentiment utilities
+│       ├── geo_utils.py          # Geocoding + geo insights
+│       ├── timeline_utils.py     # Temporal aggregation
+│       ├── alert_utils.py        # Alert scoring
+│       ├── gov_alerts.py         # Official/gov alert normalization
+│       ├── cross_validation.py   # Cluster ↔ official-signal alignment
+│       ├── live_manager.py       # WebSocket broadcast manager
+│       ├── twitter_stream.py     # Live stream service (requires credentials)
+│       └── reddit_stream.py      # (Optional) Reddit utilities/streaming
 │
 ├── frontend/
 │   ├── src/
@@ -122,6 +131,8 @@ CrisisNet/
 │   │   │   ├── GraphView.jsx
 │   │   │   ├── Metrics.jsx
 │   │   │   ├── Insights.jsx
+│   │   │   ├── GeoMap.jsx
+│   │   │   ├── LiveDashboard.jsx
 │   │   │   └── About.jsx
 │   │   ├── components/      # Reusable components
 │   │   │   └── Navbar.jsx
