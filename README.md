@@ -2,7 +2,7 @@
 
 **Tagline:** *"Mapping the flow of critical information during disasters."*
 
-CrisisNet is a research-grade web application that performs Social Network Analysis (SNA) on disaster-related tweets. The platform identifies information clusters, detects key informers, and visualizes tweet connectivity during crises.
+CrisisNet is a research-grade web application that performs Social Network Analysis (SNA) on crisis-related posts (CSV uploads) and supports optional **live monitoring**. The platform identifies information clusters, detects key informers, and visualizes connectivity during emergencies.
 
 ---
 
@@ -43,6 +43,15 @@ CrisisNet is a research-grade web application that performs Social Network Analy
 - Number of detected communities
 - Top influencer identification with centrality scores
 - Natural language summary of findings
+- **Text insights**: topic/sentiment analysis utilities (served via API)
+- **Geo insights**: hotspot summaries + map-ready data
+- **Timeline**: temporal trend aggregation
+- **Alert scoring**: risk/priority scoring and cross-validation hooks
+- **Gov/official alerts**: normalized external signals + alignment summary (when available)
+
+### ⚡ Live Monitoring (optional)
+- Start/stop/status endpoints for live event capture
+- WebSocket stream (`/ws/live`) for real-time dashboard updates
 
 ### 🌐 REST API (FastAPI)
 - `POST /upload` - Upload CSV file
@@ -50,13 +59,24 @@ CrisisNet is a research-grade web application that performs Social Network Analy
 - `GET /graph` - Get graph data (nodes & edges)
 - `GET /summary` - Get textual insights
 - `GET /metrics` - Get all computed metrics
-- `GET /download` - Export results as CSV/JSON
+- `GET /geo-insights` - Geospatial hotspot insights
+- `GET /text-insights` - Topic/sentiment results
+- `GET /alerts` - Alert scoring output (includes cross-validation fields when available)
+- `GET /timeline` - Temporal trend data
+- `GET /gov-alerts` - Official/government alert signals + alignment summary (when available)
+- `POST /live/start` - Start live monitoring (requires credentials)
+- `POST /live/stop` - Stop live monitoring
+- `GET /live/status` - Live monitoring status + summary
+- `WS /ws/live` - WebSocket for live updates
+- `GET /download?format=csv|json` - Export results
 
 ### 🎨 Frontend Dashboard
 - **Home/Upload**: File upload with dataset statistics
 - **Graph View**: Interactive network visualization with Cytoscape.js
 - **Metrics**: Bar charts and metric cards with Plotly
 - **Insights**: Natural language summary with export functionality
+- **Geo Map**: Leaflet-based geographic view
+- **Live Dashboard**: real-time event feed and summary (optional; depends on credentials)
 - **About**: Project documentation and SNA concepts
 
 ---
@@ -146,18 +166,18 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-4. Configure environment variables by creating a `.env` file (copy `backend/env.sample`) and filling in:
+4. Configure environment variables by creating `backend/.env` (optional; needed for live monitoring):
    ```
-   REDDIT_CLIENT_ID=your_reddit_app_client_id
-   REDDIT_CLIENT_SECRET=your_reddit_app_client_secret
-   REDDIT_USER_AGENT=CrisisNetLive/1.0
-   # optional: comma-separated list of monitored subreddits
-   # REDDIT_SUBREDDITS=news,worldnews,weather,EmergencyManagement
-   # enable/limit remote geocoding (defaults: true + 75 lookups per analysis)
+   # Live monitoring (Twitter/X API)
+   TWITTER_BEARER_TOKEN=your_token_here
+   # Optional query override (defaults inside the service)
+   # TWITTER_QUERY=(flood OR earthquake OR wildfire) lang:en -is:retweet
+
+   # Enable/limit remote geocoding (defaults: true + 75 lookups per analysis)
    ENABLE_REMOTE_GEOCODER=true
    MAX_REMOTE_GEOCODER_LOOKUPS=75
    ```
-   > Reddit credentials are required for the Live Dashboard’s streaming feed. Without them, `/live/start` will return a 400 error.
+   > Without `TWITTER_BEARER_TOKEN`, `POST /live/start` returns a 400 error.
 
 ### Frontend Setup
 
@@ -210,6 +230,7 @@ The frontend will be available at `http://localhost:5173`
 3. **View Graph**: Navigate to "Graph View" to see the interactive network visualization
 4. **Explore Metrics**: Check the "Metrics" page for detailed statistics and charts
 5. **Read Insights**: Visit "Insights" for natural language summaries and export results
+6. **Explore Geo / Live** (optional): Use "Geo Map" and "Live Dashboard" pages
 
 ---
 
@@ -269,8 +290,14 @@ Get textual insights and summary.
 ### `GET /metrics`
 Get all computed metrics and top influencers.
 
-### `GET /download?format=csv`
+### `GET /download?format=csv|json`
 Download analysis results as CSV or JSON.
+
+### Live monitoring (optional)
+- `POST /live/start`: start live ingestion (requires `TWITTER_BEARER_TOKEN`)
+- `POST /live/stop`: stop ingestion
+- `GET /live/status`: current status + summary
+- `WS /ws/live`: real-time events for the frontend
 
 ---
 
@@ -346,6 +373,7 @@ The application uses a clean, modern design with:
 - Community detection uses the Louvain algorithm
 - TF-IDF vectorization uses max_features=500 and includes bigrams
 - Analysis results are stored in memory (not persisted to database)
+- This repo ignores `*.csv` by default via `.gitignore`. If you want to commit datasets, remove that rule or add an exception for specific files.
 
 ---
 
