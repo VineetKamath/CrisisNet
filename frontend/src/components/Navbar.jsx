@@ -12,7 +12,7 @@ export default function Navbar() {
     { path: '/map', label: 'Geo Map' },
     { path: '/live', label: 'Live' },
     { path: '/insights', label: 'Insights' },
-    { path: '/about', label: 'About' },
+    { path: '/about', label: 'Gov & Data' },
   ]
 
   return (

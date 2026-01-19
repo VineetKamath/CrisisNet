@@ -13,6 +13,7 @@ class AnalysisState:
         self.top_influencers: Optional[List[Dict]] = None
         self.communities: Optional[Dict] = None
         self.geo_data: Optional[Dict] = None
+        self.gov_alerts: Optional[Dict] = None
         self.text_insights: Optional[Dict] = None
         self.alerts: Optional[Dict] = None
         self.timeline: Optional[Dict] = None
@@ -20,7 +21,8 @@ class AnalysisState:
         self.live_summary: Optional[Dict] = None
         self.live_running: bool = False
         self.live_manager = None
-        self.reddit_stream = None
+        # Generic handle for live streaming service (Twitter, etc.)
+        self.live_stream = None
         
     def reset(self, clear_df: bool = False):
         """Reset analysis outputs. Set clear_df=True to drop the uploaded data."""
@@ -32,6 +34,7 @@ class AnalysisState:
         self.top_influencers = None
         self.communities = None
         self.geo_data = None
+        self.gov_alerts = None
         self.text_insights = None
         self.alerts = None
         self.timeline = None

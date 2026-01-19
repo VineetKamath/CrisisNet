@@ -1,8 +1,10 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { getGraph } from '../services/api'
 
-// Dynamically import cytoscape
+// Dynamically import cytoscape + layouts
 let cytoscape = null
+let coseBilkentRegistered = false
+
 const loadCytoscape = async () => {
   if (typeof window !== 'undefined' && !cytoscape) {
     const cy = await import('cytoscape')
@@ -11,10 +13,24 @@ const loadCytoscape = async () => {
   return cytoscape
 }
 
+const ensureCoseBilkent = async () => {
+  if (!cytoscape || coseBilkentRegistered) return
+  const plugin = await import('cytoscape-cose-bilkent')
+  cytoscape.use(plugin.default || plugin)
+  coseBilkentRegistered = true
+}
+
 export default function GraphView() {
   const [graphData, setGraphData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [minWeight, setMinWeight] = useState(0)
+  const [edgeFilters, setEdgeFilters] = useState({
+    similarity: true,
+    shared_keyword: true,
+    shared_location: true,
+  })
+  const [layoutType, setLayoutType] = useState('cose')
   const cyRef = useRef(null)
   const containerRef = useRef(null)
 
@@ -23,12 +39,15 @@ export default function GraphView() {
   }, [])
 
   useEffect(() => {
-    loadCytoscape().then(() => {
+    loadCytoscape().then(async () => {
+      if (layoutType === 'cose-bilkent') {
+        await ensureCoseBilkent()
+      }
       if (graphData && containerRef.current) {
         renderGraph()
       }
     })
-  }, [graphData])
+  }, [graphData, minWeight, edgeFilters, layoutType])
 
   const loadGraph = async () => {
     try {
@@ -41,6 +60,16 @@ export default function GraphView() {
       setLoading(false)
     }
   }
+
+  const filteredEdges = useMemo(() => {
+    if (!graphData) return []
+    const activeTypes = Object.entries(edgeFilters)
+      .filter(([, enabled]) => enabled)
+      .map(([type]) => type)
+    return graphData.edges.filter(
+      (edge) => activeTypes.includes(edge.type) && (edge.weight || 0) >= minWeight,
+    )
+  }, [graphData, minWeight, edgeFilters])
 
   const renderGraph = async () => {
     if (!graphData || !containerRef.current) {
@@ -59,10 +88,7 @@ export default function GraphView() {
       cyRef.current.destroy()
     }
 
-    // Prepare elements for Cytoscape
     const elements = []
-
-    // Add nodes with all metrics
     graphData.nodes.forEach((node) => {
       elements.push({
         data: {
@@ -72,7 +98,7 @@ export default function GraphView() {
           location: node.location,
           target: node.target,
           community: node.community,
-          degree: node.degree || 0,  // Actual degree (number of connections)
+          degree: node.degree || 0,
           degree_centrality: node.degree_centrality || 0,
           betweenness_centrality: node.betweenness_centrality || 0,
           eigenvector_centrality: node.eigenvector_centrality || 0,
@@ -83,8 +109,7 @@ export default function GraphView() {
       })
     })
 
-    // Add edges with all information
-    graphData.edges.forEach((edge) => {
+    filteredEdges.forEach((edge) => {
       elements.push({
         data: {
           id: `${edge.source}-${edge.target}`,
@@ -94,7 +119,6 @@ export default function GraphView() {
           type: edge.type || 'similarity',
           path_length: edge.path_length || 1,
           is_direct: edge.is_direct !== undefined ? edge.is_direct : true,
-          // Create label for edge showing weight and type
           label: `W:${(edge.weight || 0.5).toFixed(2)}`,
         },
       })
@@ -106,6 +130,8 @@ export default function GraphView() {
       '#1E3A8A', '#06B6D4', '#DC2626', '#10B981', '#F59E0B',
       '#8B5CF6', '#EC4899', '#14B8A6', '#F97316', '#6366F1',
     ]
+
+    const layoutOptions = getLayoutOptions(layoutType)
 
     // Create Cytoscape instance
     cyRef.current = cytoscape({
@@ -174,24 +200,7 @@ export default function GraphView() {
           },
         },
       ],
-      layout: {
-        name: 'cose',
-        idealEdgeLength: 100,
-        nodeOverlap: 20,
-        refresh: 20,
-        fit: true,
-        padding: 30,
-        randomize: false,
-        componentSpacing: 100,
-        nodeRepulsion: 400000,
-        edgeElasticity: 100,
-        nestingFactor: 5,
-        gravity: 80,
-        numIter: 1000,
-        initialTemp: 200,
-        coolingFactor: 0.95,
-        minTemp: 1.0,
-      },
+      layout: layoutOptions,
     })
 
     // Add hover effects (simplified - tooltip via title attribute)
@@ -256,6 +265,53 @@ export default function GraphView() {
     })
   }
 
+  const getLayoutOptions = (type) => {
+    switch (type) {
+      case 'cose-bilkent':
+        return {
+          name: 'cose-bilkent',
+          fit: true,
+          padding: 40,
+          idealEdgeLength: 120,
+          gravityRangeCompound: 1.2,
+          gravityCompound: 1.0,
+        }
+      case 'concentric':
+        return {
+          name: 'concentric',
+          fit: true,
+          padding: 30,
+          minNodeSpacing: 20,
+          startAngle: (3 / 2) * Math.PI,
+        }
+      case 'grid':
+        return {
+          name: 'grid',
+          fit: true,
+          padding: 20,
+          avoidOverlap: true,
+        }
+      default:
+        return {
+          name: 'cose',
+          idealEdgeLength: 120,
+          nodeOverlap: 10,
+          refresh: 20,
+          fit: true,
+          padding: 40,
+          randomize: false,
+          componentSpacing: 120,
+          nodeRepulsion: 800000,
+          edgeElasticity: 150,
+          gravity: 80,
+          numIter: 1000,
+          initialTemp: 200,
+          coolingFactor: 0.95,
+          minTemp: 1.0,
+        }
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
@@ -315,18 +371,79 @@ export default function GraphView() {
               {graphData.edges.filter(e => e.type === 'shared_location').length} location edges
             </div>
           </div>
-          <button
-            onClick={loadGraph}
-            className="px-4 py-2 bg-cyan text-navy rounded-lg hover:bg-cyan-600 text-sm font-semibold"
-          >
-            Refresh
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={loadGraph}
+              className="px-3 py-2 bg-cyan text-navy rounded-lg hover:bg-cyan-600 text-xs font-semibold"
+            >
+              Refresh
+            </button>
+            <button
+              onClick={renderGraph}
+              className="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-xs font-semibold hover:bg-gray-200"
+            >
+              Re-run layout
+            </button>
+          </div>
         </div>
-        <div
-          ref={containerRef}
-          className="w-full h-[600px] border border-gray-200 rounded-lg"
-          style={{ minHeight: '600px' }}
-        ></div>
+        <div className="grid md:grid-cols-[260px_1fr] gap-4">
+          <div className="bg-gray-50 border border-gray-100 rounded-lg p-4 space-y-4">
+            <div>
+              <p className="text-xs uppercase text-gray-500">Edge weight filter</p>
+              <div className="flex items-center gap-3 mt-2">
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value={minWeight}
+                  onChange={(e) => setMinWeight(parseFloat(e.target.value))}
+                  className="flex-1"
+                />
+                <span className="text-sm font-semibold">{minWeight.toFixed(2)}</span>
+              </div>
+            </div>
+            <div>
+              <p className="text-xs uppercase text-gray-500">Edge types</p>
+              {['similarity', 'shared_keyword', 'shared_location'].map((type) => (
+                <label key={type} className="flex items-center gap-2 text-sm text-gray-600 mt-1">
+                  <input
+                    type="checkbox"
+                    checked={edgeFilters[type]}
+                    onChange={() =>
+                      setEdgeFilters((prev) => ({ ...prev, [type]: !prev[type] }))
+                    }
+                    className="h-4 w-4 rounded border-gray-300 text-cyan focus:ring-cyan"
+                  />
+                  {type.replace('_', ' ')}
+                </label>
+              ))}
+            </div>
+            <div>
+              <p className="text-xs uppercase text-gray-500">Layout</p>
+              <div className="flex flex-wrap gap-2 mt-2">
+                {['cose', 'cose-bilkent', 'concentric', 'grid'].map((layout) => (
+                  <button
+                    key={layout}
+                    onClick={() => setLayoutType(layout)}
+                    className={`px-3 py-1 text-xs rounded-full ${
+                      layoutType === layout
+                        ? 'bg-navy text-white'
+                        : 'bg-white border border-gray-200 text-gray-600 hover:border-gray-400'
+                    }`}
+                  >
+                    {layout}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div
+            ref={containerRef}
+            className="w-full h-[600px] border border-gray-200 rounded-lg"
+            style={{ minHeight: '600px' }}
+          ></div>
+        </div>
       </div>
 
       <div className="mt-6 bg-gray-50 rounded-lg p-6">

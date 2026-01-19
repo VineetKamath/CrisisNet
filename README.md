@@ -135,7 +135,7 @@ CrisisNet/
 cd backend
 ```
 
-2. Create a virtual environment (recommended):
+2. (Optional) Create a virtual environment:
 ```bash
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
@@ -145,6 +145,19 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 ```bash
 pip install -r requirements.txt
 ```
+
+4. Configure environment variables by creating a `.env` file (copy `backend/env.sample`) and filling in:
+   ```
+   REDDIT_CLIENT_ID=your_reddit_app_client_id
+   REDDIT_CLIENT_SECRET=your_reddit_app_client_secret
+   REDDIT_USER_AGENT=CrisisNetLive/1.0
+   # optional: comma-separated list of monitored subreddits
+   # REDDIT_SUBREDDITS=news,worldnews,weather,EmergencyManagement
+   # enable/limit remote geocoding (defaults: true + 75 lookups per analysis)
+   ENABLE_REMOTE_GEOCODER=true
+   MAX_REMOTE_GEOCODER_LOOKUPS=75
+   ```
+   > Reddit credentials are required for the Live Dashboard’s streaming feed. Without them, `/live/start` will return a 400 error.
 
 ### Frontend Setup
 

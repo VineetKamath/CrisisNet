@@ -57,7 +57,8 @@ export default function LiveDashboard() {
       setRunning(status.running)
       setSummary(status.summary)
       setConfigured(status.configured)
-      setEvents(status.summary?.last_event ? status.summary.last_event : [])
+      // Initialize events as an array. If there is a last_event, wrap it in an array.
+      setEvents(status.summary?.last_event ? [status.summary.last_event] : [])
     } catch (err) {
       if (err.response?.status !== 400) {
         setError(err.response?.data?.detail || 'Failed to load live status')
@@ -114,7 +115,7 @@ export default function LiveDashboard() {
             </div>
             <h1 className="text-3xl font-bold text-navy mt-3">Live Crisis Command Center</h1>
             <p className="text-gray-600">
-              Streaming Reddit signals in real time. Track hotspots, analyze sentiment, and surface AI insights.
+              Streaming Twitter signals in real time. Track hotspots, analyze sentiment, and surface AI insights.
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
@@ -185,7 +186,7 @@ export default function LiveDashboard() {
                         <p>{loc.title}</p>
                         <p className="text-xs text-gray-500">{new Date(loc.created_at || loc.timestamp).toLocaleString()}</p>
                         <a href={loc.permalink || loc.url} target="_blank" rel="noreferrer" className="text-cyan-600 text-xs">
-                          View on Reddit
+                          View on Twitter
                         </a>
                       </div>
                     </Popup>
@@ -199,7 +200,7 @@ export default function LiveDashboard() {
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
               <div>
                 <p className="text-xs uppercase tracking-wide text-gray-500">Signal stream</p>
-                <h2 className="text-xl font-semibold text-navy">Latest Reddit Alerts</h2>
+                <h2 className="text-xl font-semibold text-navy">Latest Twitter Alerts</h2>
               </div>
               <span className="text-xs text-gray-400">{feedItems.length} posts tracked</span>
             </div>
@@ -283,7 +284,7 @@ export default function LiveDashboard() {
             <h3 className="text-lg font-semibold text-navy mb-4">System health</h3>
             <ul className="space-y-3 text-sm text-gray-600">
               <li className="flex items-center justify-between">
-                <span>Reddit credentials</span>
+                <span>Twitter credentials</span>
                 <span className={configured ? 'text-green-600 font-semibold' : 'text-red-500 font-semibold'}>
                   {configured ? 'Configured' : 'Missing'}
                 </span>

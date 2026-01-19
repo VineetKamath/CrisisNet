@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Dict, List
 from collections import Counter
+from io import BytesIO
 from utils.graph_utils import (
     build_graph,
     compute_centrality_metrics,
@@ -15,7 +16,9 @@ from utils.graph_utils import (
     compute_path_lengths,
     compute_edge_path_info,
 )
-from utils.reddit_stream import RedditStreamService
+from utils.gov_alerts import compute_gov_alerts
+from utils.cross_validation import compute_cross_validation
+from utils.twitter_stream import TwitterStreamService
 from utils.live_manager import LiveUpdateManager
 from models import AnalysisState
 
@@ -98,8 +101,8 @@ def init_state(state: AnalysisState):
     analysis_state = state
     if analysis_state.live_manager is None:
         analysis_state.live_manager = LiveUpdateManager()
-    if analysis_state.reddit_stream is None:
-        analysis_state.reddit_stream = RedditStreamService()
+    if analysis_state.live_stream is None:
+        analysis_state.live_stream = TwitterStreamService()
 
 @router.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
@@ -110,7 +113,16 @@ async def upload_file(file: UploadFile = File(...)):
     try:
         # Read CSV
         contents = await file.read()
-        df = pd.read_csv(pd.io.common.BytesIO(contents))
+        try:
+            df = pd.read_csv(BytesIO(contents))
+        except UnicodeDecodeError:
+            try:
+                df = pd.read_csv(BytesIO(contents), encoding='latin-1')
+            except UnicodeDecodeError as e:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Unable to decode CSV. Please save the file using UTF-8 encoding.",
+                ) from e
         
         # Validate required columns
         required_cols = ['id', 'keyword', 'location', 'text', 'target']
@@ -190,6 +202,32 @@ async def analyze():
             text_insights.get('tweet_topics', {}),
             communities
         )
+        # Phase 1 – fetch and store government / official alerts
+        analysis_state.gov_alerts = compute_gov_alerts(df)
+        
+        # Phase 2 – Cross-validation: match clusters with gov alerts and adjust credibility
+        try:
+            cross_validation_result = compute_cross_validation(
+                df,
+                communities,
+                analysis_state.gov_alerts,
+                analysis_state.alerts
+            )
+            # Update alerts with cross-validation adjustments
+            if analysis_state.alerts and isinstance(analysis_state.alerts, dict):
+                analysis_state.alerts["alerts"] = cross_validation_result["adjusted_alerts"]
+                analysis_state.alerts["cross_validation"] = cross_validation_result["cross_validation"]
+                analysis_state.alerts["cross_validation_summary"] = cross_validation_result["summary"]
+        except Exception as cv_error:
+            # If cross-validation fails, log but don't break the analysis
+            print(f"Cross-validation error (non-fatal): {cv_error}")
+            if analysis_state.alerts and isinstance(analysis_state.alerts, dict):
+                analysis_state.alerts["cross_validation"] = {}
+                analysis_state.alerts["cross_validation_summary"] = {
+                    "aligned_clusters": 0,
+                    "contradicted_clusters": 0,
+                    "no_match_clusters": 0,
+                }
         
         # Compute summary metrics
         num_communities = len(set(communities.values()))
@@ -332,6 +370,33 @@ async def get_geo_insights():
         raise HTTPException(status_code=400, detail="No analysis performed. Please run /analyze first.")
     return analysis_state.geo_data
 
+
+@router.get("/gov-alerts")
+async def get_gov_alerts():
+    """Return normalized government / official hazard alerts with Phase 2 cross-validation results"""
+    if analysis_state.gov_alerts is None:
+        raise HTTPException(status_code=400, detail="No analysis performed. Please run /analyze first.")
+    
+    # Include Phase 2 cross-validation results if available
+    result = analysis_state.gov_alerts.copy() if isinstance(analysis_state.gov_alerts, dict) else {}
+    
+    # Safely add cross-validation data
+    if analysis_state.alerts and isinstance(analysis_state.alerts, dict):
+        if "cross_validation" in analysis_state.alerts:
+            result["cross_validation"] = analysis_state.alerts.get("cross_validation", {})
+        if "cross_validation_summary" in analysis_state.alerts:
+            result["cross_validation_summary"] = analysis_state.alerts.get("cross_validation_summary", {})
+    else:
+        # Provide empty cross-validation if not available
+        result["cross_validation"] = {}
+        result["cross_validation_summary"] = {
+            "aligned_clusters": 0,
+            "contradicted_clusters": 0,
+            "no_match_clusters": 0,
+        }
+    
+    return result
+
 @router.get("/text-insights")
 async def get_text_insights():
     """Return topic modeling and sentiment results"""
@@ -355,16 +420,18 @@ async def get_timeline():
 
 @router.post("/live/start")
 async def start_live_stream():
-    """Start Reddit-based live monitoring"""
-    if analysis_state.reddit_stream is None:
-        analysis_state.reddit_stream = RedditStreamService()
+    """Start Twitter-based live monitoring"""
+    if analysis_state.live_stream is None:
+        analysis_state.live_stream = TwitterStreamService()
 
-    service = analysis_state.reddit_stream
+    service = analysis_state.live_stream
 
     if not service.is_configured():
         raise HTTPException(
             status_code=400,
-            detail="Reddit credentials missing. Set REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET, and REDDIT_USER_AGENT.",
+            detail=(
+                "Twitter credentials missing. Set TWITTER_BEARER_TOKEN and optional TWITTER_QUERY."
+            ),
         )
 
     if analysis_state.live_running:
@@ -378,8 +445,8 @@ async def start_live_stream():
 @router.post("/live/stop")
 async def stop_live_stream():
     """Stop live monitoring"""
-    if analysis_state.reddit_stream:
-        await analysis_state.reddit_stream.stop()
+    if analysis_state.live_stream:
+        await analysis_state.live_stream.stop()
     analysis_state.live_running = False
     return {"message": "Live monitoring stopped"}
 
@@ -387,7 +454,7 @@ async def stop_live_stream():
 @router.get("/live/status")
 async def live_status():
     """Get live monitoring status"""
-    service = analysis_state.reddit_stream
+    service = analysis_state.live_stream
     configured = service.is_configured() if service else False
     return {
         "running": analysis_state.live_running,

@@ -4,6 +4,8 @@ import networkx as nx
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import community.community_louvain as community_louvain
+from networkx.algorithms.community import asyn_lpa_communities
+import time
 import re
 from typing import Dict, List, Tuple, Optional
 
@@ -123,13 +125,38 @@ def compute_centrality_metrics(G: nx.Graph) -> Dict[str, Dict[str, float]]:
     return metrics
 
 def detect_communities(G: nx.Graph) -> Dict[str, int]:
-    """Detect communities using Louvain method"""
-    print("Detecting communities...")
-    if len(G.nodes()) == 0:
+    """Detect communities using Louvain or fallback to label propagation for large graphs"""
+    num_nodes = len(G.nodes())
+    num_edges = G.number_of_edges()
+    print(f"Detecting communities... nodes={num_nodes} edges={num_edges}")
+    if num_nodes == 0:
         return {}
-    
-    partition = community_louvain.best_partition(G)
-    return partition
+
+    start = time.time()
+    try:
+        # Use faster label propagation for very large graphs
+        if num_nodes > 2000 or num_edges > 20000:
+            print("Graph is large, using label propagation for community detection.")
+            communities_iter = asyn_lpa_communities(G, weight='weight', seed=42)
+            partition = {}
+            for community_id, community in enumerate(communities_iter):
+                for node in community:
+                    partition[str(node)] = community_id
+            print(f"Label propagation completed in {time.time() - start:.2f}s")
+            return partition
+        # Louvain for smaller graphs
+        partition = community_louvain.best_partition(G, random_state=42)
+        print(f"Louvain completed in {time.time() - start:.2f}s")
+        return partition
+    except Exception as e:
+        print(f"Louvain failed ({e}); falling back to label propagation.")
+        communities_iter = asyn_lpa_communities(G, weight='weight', seed=42)
+        partition = {}
+        for community_id, community in enumerate(communities_iter):
+            for node in community:
+                partition[str(node)] = community_id
+        print(f"Fallback label propagation completed in {time.time() - start:.2f}s")
+        return partition
 
 def get_top_influencers(G: nx.Graph, metrics: Dict[str, Dict[str, float]], 
                        communities: Dict[str, int], df: pd.DataFrame, top_n: int = 10) -> List[Dict]:

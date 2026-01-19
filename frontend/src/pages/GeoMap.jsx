@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
-import { getGeoInsights } from '../services/api'
+import { getGeoInsights, getGovAlerts } from '../services/api'
 
 export default function GeoMap() {
   const [geoData, setGeoData] = useState(null)
@@ -10,6 +10,8 @@ export default function GeoMap() {
   const [searchQuery, setSearchQuery] = useState('')
   const [minDisasterRatio, setMinDisasterRatio] = useState(0)
   const [showHighRisk, setShowHighRisk] = useState(false)
+
+  const [govAlerts, setGovAlerts] = useState(null)
 
   useEffect(() => {
     loadGeoData()
@@ -20,6 +22,15 @@ export default function GeoMap() {
       setLoading(true)
       const data = await getGeoInsights()
       setGeoData(data)
+      // Phase 1: attempt to load government alerts as an overlay
+      try {
+        const alerts = await getGovAlerts()
+        setGovAlerts(alerts)
+      } catch (err) {
+        // If /gov-alerts is not ready (400) or fails, keep map usable
+        console.warn('Gov alerts not available', err?.response?.data || err)
+        setGovAlerts(null)
+      }
     } catch (err) {
       setError(err.response?.data?.detail || 'Failed to load geospatial insights')
     } finally {
@@ -29,6 +40,7 @@ export default function GeoMap() {
 
   const locations = geoData?.locations || []
   const summary = geoData?.summary
+  const govAlertList = govAlerts?.alerts || []
 
   const filteredLocations = useMemo(() => {
     return locations.filter((loc) => {
@@ -168,6 +180,48 @@ export default function GeoMap() {
                 attribution='&copy; <a href="http://osm.org/copyright">OpenStreetMap</a> contributors'
                 url="https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png"
               />
+              {/* Government / official alerts overlay */}
+              {govAlertList.map((alert, idx) => (
+                <CircleMarker
+                  key={`gov-${idx}-${alert.lat}-${alert.lon}`}
+                  center={[alert.lat, alert.lon]}
+                  radius={10}
+                  pathOptions={{
+                    color: '#F97316',
+                    fillColor: '#F97316',
+                    fillOpacity: 0.6,
+                    weight: 2,
+                  }}
+                >
+                  <Popup>
+                    <div className="space-y-1 text-xs text-gray-700">
+                      <p className="font-semibold text-navy">
+                        {alert.event || 'Official alert'}
+                      </p>
+                      {alert.location_name && (
+                        <p className="text-gray-600">{alert.location_name}</p>
+                      )}
+                      {alert.severity && (
+                        <p>
+                          Severity:{' '}
+                          <span className="font-semibold uppercase">{alert.severity}</span>
+                        </p>
+                      )}
+                      {alert.start_time && (
+                        <p>From: {new Date(alert.start_time).toLocaleString()}</p>
+                      )}
+                      {alert.end_time && (
+                        <p>To: {new Date(alert.end_time).toLocaleString()}</p>
+                      )}
+                      {alert.provider && (
+                        <p className="text-[11px] text-gray-500">
+                          Source: {alert.provider}
+                        </p>
+                      )}
+                    </div>
+                  </Popup>
+                </CircleMarker>
+              ))}
               {filteredLocations.map((loc) => (
                 <CircleMarker
                   key={`${loc.location}-${loc.lat}-${loc.lon}`}
@@ -300,6 +354,10 @@ export default function GeoMap() {
               <li className="flex items-center space-x-2">
                 <span className="w-3 h-3 rounded-full border border-gray-400 inline-block" />
                 <span>Circle size = total tweet volume</span>
+              </li>
+              <li className="flex items-center space-x-2">
+                <span className="w-3 h-3 rounded-full bg-orange-400 inline-block" />
+                <span>Orange rings = official weather / hazard alerts (Open-Meteo API)</span>
               </li>
             </ul>
           </div>

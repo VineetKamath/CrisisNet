@@ -45,6 +45,11 @@ export const getGeoInsights = async () => {
   return response.data
 }
 
+export const getGovAlerts = async () => {
+  const response = await api.get('/gov-alerts')
+  return response.data
+}
+
 export const getTextInsights = async () => {
   const response = await api.get('/text-insights')
   return response.data
